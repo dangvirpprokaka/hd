@@ -1,84 +1,102 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lê Trọng Hải Đăng - Trang Cá Nhân</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f4f4f4;
-            color: #333;
-        }
-        header {
-            background-color: #333;
-            color: #fff;
-            padding: 10px 0;
-            text-align: center;
-        }
-        .container {
-            width: 80%;
-            margin: auto;
-            overflow: hidden;
-        }
-        #main {
-            margin-top: 30px;
-        }
-        .card {
-            background: #fff;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-        }
-        .card h2 {
-            margin-top: 0;
-        }
-        footer {
-            background-color: #333;
-            color: #fff;
-            text-align: center;
-            padding: 10px 0;
-            position: fixed;
-            width: 100%;
-            bottom: 0;
-        }
-        a {
-            color: #333;
-            text-decoration: none;
-        }
-        a:hover {
-            color: #000;
-        }
-    </style>
+    <title>Upload Captcha</title>
 </head>
 <body>
-    <header>
-        <h1>Lê Trọng Hải Đăng</h1>
-    </header>
-    <div class="container">
-        <div id="main">
-            <div class="card">
-                <h2>Thông Tin Cá Nhân</h2>
-                <p><strong>Họ tên:</strong> Lê Trọng Hải Đăng</p>
-                <p><strong>Ngày sinh:</strong> 30-09-2009</p>
-                <p><strong>Địa điểm:</strong> Thanh Hoá</p>
-                <p><strong>Mô tả:</strong> Tôi là Lê Trọng Hải Đăng, một người đam mê lập trình và yêu thích chơi game.</p>
-            </div>
-            <div class="card">
-                <h2>Sở Thích và Sở Trường</h2>
-                <p><strong>Sở thích:</strong> Chơi game</p>
-                <p><strong>Sở trường:</strong> Lập trình</p>
-            </div>
-            <div class="card">
-                <h2>Liên Hệ và Mạng Xã Hội</h2>
-                <p><strong>Facebook:</strong> <a href="https://www.facebook.com/letronghaidang.limited" target="_blank">Lê Trọng Hải Đăng</a></p>
-            </div>
-        </div>
+    <h1>Upload Captcha</h1>
+    <form id="captchaForm" method="post" enctype="multipart/form-data">
+        <input type="file" name="captcha" accept="image/*" required>
+        <button type="submit">Upload</button>
+    </form>
+    <div id="result">
+        <?php
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            header('Content-Type: application/json');
+
+            // Kiểm tra xem file có được upload hay không
+            if (!isset($_FILES['captcha']) || $_FILES['captcha']['error'] !== UPLOAD_ERR_OK) {
+                $data = [
+                    'status' => 'error',
+                    'message' => 'Vui lòng upload file hình ảnh captcha.'
+                ];
+                echo json_encode($data, JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+
+            $imagePath = 'captcha_image.png';
+
+            // Lưu file upload vào đường dẫn chỉ định
+            if (!move_uploaded_file($_FILES['captcha']['tmp_name'], $imagePath)) {
+                $data = [
+                    'status' => 'error',
+                    'message' => 'Không thể lưu file hình ảnh captcha.'
+                ];
+                echo json_encode($data, JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+
+            // Đường dẫn tới Tesseract OCR
+            $tesseractPath = '/nix/store/arjxcwp7fw87anxybq54mll8yfq3pdq6-tesseract-3.05.00/bin/tesseract';
+
+            // Kiểm tra xem file captcha có tồn tại không
+            if (!file_exists($imagePath)) {
+                $data = [
+                    'status' => 'error',
+                    'message' => 'File captcha không tồn tại.'
+                ];
+                echo json_encode($data, JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+
+            // Đường dẫn tới file tạm để lưu kết quả OCR
+            $outputPath = tempnam(sys_get_temp_dir(), 'ocr');
+
+            // Thực thi lệnh Tesseract OCR
+            $command = "$tesseractPath $imagePath $outputPath";
+            exec($command, $output, $return_var);
+
+            // Kiểm tra kết quả thực thi lệnh
+            if ($return_var !== 0) {
+                $data = [
+                    'status' => 'error',
+                    'message' => 'Lỗi khi thực thi Tesseract OCR.'
+                ];
+                echo json_encode($data, JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+
+            // Đọc kết quả từ file tạm
+            $ocrResult = file_get_contents("$outputPath.txt");
+
+            // Xóa file tạm
+            unlink($outputPath);
+            unlink("$outputPath.txt");
+
+            // Làm sạch kết quả OCR
+            $cleanedResult = preg_replace('/[^A-Za-z0-9]/', '', $ocrResult);
+
+            // Hiển thị kết quả dưới dạng JSON
+            echo json_encode(['status' => 'success', 'captcha' => $cleanedResult], JSON_UNESCAPED_UNICODE);
+        }
+        ?>
     </div>
-    <footer>
-        <p>&copy; 2024 Lê Trọng Hải Đăng</p>
-    </footer>
+
+    <script>
+        document.getElementById('captchaForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const formData = new FormData(event.target);
+            const response = await fetch('', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+            document.getElementById('result').textContent = JSON.stringify(result, null, 2);
+        });
+    </script>
 </body>
 </html>
